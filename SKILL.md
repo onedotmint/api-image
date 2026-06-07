@@ -22,8 +22,11 @@ Routing rule:
    - Default provider file: `<skill-dir>/.env`.
    - The `.env` file must contain `API_IMAGE_BASE_URL=https://provider.example/v1`.
    - The `.env` file must contain `API_IMAGE_API_KEY=<provider-key>`.
+   - Optional provider display names use `API_IMAGE_PROVIDER_NAME` or `API_IMAGE_FALLBACK_<N>_NAME`.
+   - Optional fallback providers use `API_IMAGE_FALLBACK_<N>_BASE_URL` and `API_IMAGE_FALLBACK_<N>_API_KEY`.
+   - Optional model overrides use `API_IMAGE_MODEL` or `API_IMAGE_FALLBACK_<N>_MODEL`.
    - Use `--env-file <path>` only when the user wants a different provider file.
-   - Use `--base-url`, `--api-key-env`, or `--api-key` only for temporary one-off overrides.
+   - Use `--base-url`, `--api-key-env`, or `--api-key` only for temporary one-off overrides; those overrides bypass `.env` fallback providers.
    - Never read `auth.json`, `config.toml`, `CODEX_HOME`, or `~/.codex` for image provider settings.
    - Never write provider URLs or API keys into `auth.json`, `config.toml`, README, logs, generated files, or final responses.
    - If `base_url` or API key is missing, ask the user to edit `<skill-dir>/.env` before invoking the script.
@@ -60,8 +63,15 @@ The script does not use Codex root configuration. It reads third-party provider 
 Default provider file:
 
 ```env
+API_IMAGE_PROVIDER_NAME=main
 API_IMAGE_BASE_URL=https://provider.example/v1
 API_IMAGE_API_KEY=your_provider_key
+# API_IMAGE_MODEL=gpt-image-2
+
+# API_IMAGE_FALLBACK_1_NAME=backup-a
+# API_IMAGE_FALLBACK_1_BASE_URL=https://backup-provider.example/v1
+# API_IMAGE_FALLBACK_1_API_KEY=your_backup_provider_key
+# API_IMAGE_FALLBACK_1_MODEL=gpt-image-2
 ```
 
 Accepted provider sources:
@@ -74,8 +84,11 @@ Accepted provider sources:
 
 Resolution order:
 
-1. `base_url`: `--base-url`, then `API_IMAGE_BASE_URL` from the provider file.
-2. API key: `--api-key`, then `--api-key-env`, then `API_IMAGE_API_KEY` from the provider file.
+1. Primary `base_url`: `--base-url`, then `API_IMAGE_BASE_URL` from the provider file.
+2. Primary API key: `--api-key`, then `--api-key-env`, then `API_IMAGE_API_KEY` from the provider file.
+3. Fallback providers: `API_IMAGE_FALLBACK_1_*`, `API_IMAGE_FALLBACK_2_*`, and so on in numeric order.
+4. Provider display name: `API_IMAGE_PROVIDER_NAME` or `API_IMAGE_FALLBACK_<N>_NAME`; defaults to `primary`, `fallback_1`, and so on.
+5. Model: command `--model`, overridden per provider by `API_IMAGE_MODEL` or `API_IMAGE_FALLBACK_<N>_MODEL` when set.
 
 Rules:
 
@@ -84,6 +97,8 @@ Rules:
 - `.env` is ignored by `.gitignore`; keep real keys there.
 - If both `--api-key` and `--api-key-env` are provided, the script raises an error.
 - If `--base-url` or provider-file `base_url` is not an HTTP(S) URL, the script raises an error.
+- The script falls back only on retryable channel errors: connection failure, timeout, HTTP 429, or HTTP 5xx.
+- The script does not fall back on local validation errors, invalid credentials, unsupported parameters, HTTP 400, HTTP 401, HTTP 403, or content policy refusals.
 
 ## Command
 
@@ -310,6 +325,8 @@ Follow the current official GPT Image rules for `gpt-image-2`:
 
 - Raise explicit errors when `<skill-dir>/.env` is missing or when `base_url` or API key is missing from the provider file.
 - Raise explicit errors when both `--api-key` and `--api-key-env` are provided, when the named environment variable is empty, or when `base_url` is not an HTTP(S) URL.
+- Try fallback providers in numeric order only for retryable channel errors: connection failure, timeout, HTTP 429, or HTTP 5xx.
+- Do not use fallback providers for local validation errors, invalid credentials, unsupported parameters, HTTP 400, HTTP 401, HTTP 403, or content policy refusals.
 - Raise explicit errors when `size` violates the official GPT Image constraints or `quality` is unsupported.
 - Raise explicit errors when edit/reference mode is requested without input images.
 - Raise explicit errors when `gpt-image-2` is used with `--background transparent` or `--input-fidelity`.

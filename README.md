@@ -69,6 +69,7 @@ cp ~/.codex/skills/api-image/.env.example ~/.codex/skills/api-image/.env
 然后把 `.env` 改成这样：
 
 ```env
+API_IMAGE_PROVIDER_NAME=main
 API_IMAGE_BASE_URL=https://你的第三方地址/v1
 API_IMAGE_API_KEY=你的第三方key
 ```
@@ -79,6 +80,20 @@ API_IMAGE_API_KEY=你的第三方key
 - API Key
 
 `.env` 已在 `.gitignore` 里，不会上传到 GitHub。不要把真实 key 写进 `README.md` 或 `SKILL.md`。
+
+如果要配备用渠道，在 `.env` 里继续加：
+
+```env
+API_IMAGE_FALLBACK_1_NAME=backup-a
+API_IMAGE_FALLBACK_1_BASE_URL=https://备用渠道1/v1
+API_IMAGE_FALLBACK_1_API_KEY=备用渠道1的key
+
+API_IMAGE_FALLBACK_2_NAME=backup-b
+API_IMAGE_FALLBACK_2_BASE_URL=https://备用渠道2/v1
+API_IMAGE_FALLBACK_2_API_KEY=备用渠道2的key
+```
+
+`*_NAME` 只用于日志，方便看出哪个渠道成功或失败。脚本会先用主渠道。主渠道连接失败、超时、HTTP 429 或 HTTP 5xx 时，自动试备用渠道。参数错误、鉴权失败、内容被拒这类问题不会自动切换。
 
 ## 怎么用
 

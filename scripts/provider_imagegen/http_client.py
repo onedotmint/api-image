@@ -3,6 +3,7 @@ from __future__ import annotations
 import base64
 import json
 import mimetypes
+import socket
 import uuid
 import urllib.error
 import urllib.request
@@ -12,6 +13,13 @@ from pathlib import Path
 CRLF = b"\r\n"
 GENERATION_SUFFIX = "/images/generations"
 EDIT_SUFFIX = "/images/edits"
+RETRYABLE_HTTP_STATUS = frozenset({408, 409, 425, 429})
+
+
+class ProviderRequestError(RuntimeError):
+    def __init__(self, message: str, retryable: bool) -> None:
+        super().__init__(message)
+        self.retryable = retryable
 
 
 @dataclass(frozen=True)
@@ -63,12 +71,19 @@ def post_multipart(
 def read_json_response(request: urllib.request.Request, timeout: int | None) -> dict:
     try:
         with open_url(request, timeout) as response:
-            return json.loads(response.read().decode("utf-8"))
+            raw_body = response.read().decode("utf-8")
+            try:
+                return json.loads(raw_body)
+            except json.JSONDecodeError as exc:
+                raise ProviderRequestError("Provider returned invalid JSON.", True) from exc
     except urllib.error.HTTPError as exc:
         detail = exc.read().decode("utf-8", errors="replace")
-        raise RuntimeError(f"HTTP {exc.code} from provider: {detail}") from exc
+        retryable = exc.code in RETRYABLE_HTTP_STATUS or 500 <= exc.code < 600
+        raise ProviderRequestError(f"HTTP {exc.code} from provider: {detail}", retryable) from exc
     except urllib.error.URLError as exc:
-        raise RuntimeError(f"Failed to connect to provider: {exc.reason}") from exc
+        raise ProviderRequestError(f"Failed to connect to provider: {exc.reason}", True) from exc
+    except (TimeoutError, socket.timeout) as exc:
+        raise ProviderRequestError(f"Timed out connecting to provider: {exc}", True) from exc
 
 
 def encode_multipart(fields: list[tuple[str, str]], files: list[FilePart], boundary: str) -> bytes:
@@ -120,6 +135,11 @@ def fetch_image_bytes(item: dict, timeout: int | None) -> bytes:
         return base64.b64decode(b64_json)
     image_url = item.get("url")
     if isinstance(image_url, str) and image_url:
-        with open_url(image_url, timeout) as response:
-            return response.read()
+        try:
+            with open_url(image_url, timeout) as response:
+                return response.read()
+        except urllib.error.URLError as exc:
+            raise ProviderRequestError(f"Failed to fetch provider image URL: {exc.reason}", True) from exc
+        except (TimeoutError, socket.timeout) as exc:
+            raise ProviderRequestError(f"Timed out fetching provider image URL: {exc}", True) from exc
     raise ValueError("Provider response item does not contain b64_json or url.")
