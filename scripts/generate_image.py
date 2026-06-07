@@ -4,7 +4,7 @@ import argparse
 import sys
 from pathlib import Path
 
-from provider_imagegen.config import load_provider_config, resolve_codex_home
+from provider_imagegen.config import ProviderConfig, load_provider_config
 from provider_imagegen.http_client import EDIT_SUFFIX, GENERATION_SUFFIX, extract_images, post_json, post_multipart
 from provider_imagegen.outputs import output_paths_for_response, resolve_base_path, write_images
 from provider_imagegen.payloads import build_edit_parts, build_generation_payload
@@ -18,9 +18,13 @@ from provider_imagegen.validation import (
 )
 
 
+def default_env_file() -> Path:
+    return Path(__file__).resolve().parents[1] / ".env"
+
+
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description="Generate or edit images using the provider configured in the user's Codex root."
+        description="Generate or edit images using a user-supplied OpenAI-compatible image provider."
     )
     parser.add_argument("--prompt", help="Image prompt.")
     parser.add_argument("--prompt-file", help="UTF-8 text file with one prompt per non-empty line.")
@@ -44,15 +48,18 @@ def parse_args() -> argparse.Namespace:
         help="low or high for supported edit models. Do not use with gpt-image-2.",
     )
     parser.add_argument("--moderation", help="auto or low for supported GPT image models.")
-    parser.add_argument("--codex-home", help="Override Codex root directory.")
-    parser.add_argument("--base-url", help="Temporarily override the configured provider base_url.")
+    parser.add_argument("--env-file", help="Provider .env file. Defaults to <skill-dir>/.env.")
+    parser.add_argument(
+        "--base-url",
+        help="Temporary OpenAI-compatible provider base URL override.",
+    )
     parser.add_argument(
         "--api-key-env",
-        help="Environment variable containing a temporary API key override. Preferred over --api-key.",
+        help="Temporary environment variable containing the provider API key.",
     )
     parser.add_argument(
         "--api-key",
-        help="Temporary API key override. Prefer --api-key-env to avoid putting secrets in command text.",
+        help="Temporary provider API key override. Prefer the .env file for normal use.",
     )
     parser.add_argument("--timeout", type=int, default=DEFAULT_TIMEOUT, help="0 disables client timeout.")
     return parser.parse_args()
@@ -97,14 +104,13 @@ def validate_mode(args: argparse.Namespace, mode: str) -> None:
         raise ValueError("--image and --mask require edit mode or auto mode.")
 
 
-def request_images(args: argparse.Namespace, prompt: str, mode: str, timeout: int | None) -> list[bytes]:
-    codex_home = resolve_codex_home(args.codex_home)
-    provider = load_provider_config(
-        codex_home,
-        base_url_override=args.base_url,
-        api_key_override=args.api_key,
-        api_key_env=args.api_key_env,
-    )
+def request_images(
+    args: argparse.Namespace,
+    prompt: str,
+    mode: str,
+    timeout: int | None,
+    provider: ProviderConfig,
+) -> list[bytes]:
     if mode == "edit":
         fields, files = build_edit_parts(args, prompt)
         response = post_multipart(f"{provider.base_url}{EDIT_SUFFIX}", provider.api_key, fields, files, timeout)
@@ -121,10 +127,16 @@ def main() -> int:
     validate_mode(args, mode)
     prompts = load_prompts(args.prompt, args.prompt_file)
     base_path = resolve_base_path(args.out)
+    provider = load_provider_config(
+        env_file=Path(args.env_file).expanduser().resolve() if args.env_file else default_env_file(),
+        base_url_override=args.base_url,
+        api_key_override=args.api_key,
+        api_key_env=args.api_key_env,
+    )
     for prompt_index, raw_prompt in enumerate(prompts):
         prompt = apply_image_roles(raw_prompt, args.image_role, len(args.image))
         print(f"Waiting for provider image {mode} job {prompt_index + 1}/{len(prompts)}...", file=sys.stderr)
-        images = request_images(args, prompt, mode, timeout)
+        images = request_images(args, prompt, mode, timeout, provider)
         output_paths = output_paths_for_response(base_path, prompt_index, len(prompts), len(images))
         for path in write_images(images, output_paths):
             print(path)

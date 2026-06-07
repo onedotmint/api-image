@@ -13,12 +13,28 @@
 - 局部编辑 / inpainting
 - 多参考图辅助构图、风格、产品或人物一致性
 - 需要真实信息的图片生成前，先让 Codex 搜索和整理参考资料
-- 默认读取你 Codex 根目录里的 Provider 配置
-- 临时切换本次调用使用的 URL 或 API Key
+- 从 skill 目录里的 `.env` 读取第三方 Provider `base_url`
+- 从 skill 目录里的 `.env` 读取第三方 Provider API Key
 
 更细的调用规则和脚本参数都在 [SKILL.md](./SKILL.md) 里，README 只讲怎么用。
 
 ## 安装
+
+Linux / macOS：
+
+```bash
+mkdir -p ~/.codex/skills
+git clone <repo-url> ~/.codex/skills/api-image
+```
+
+如果仓库已经在本机，也可以复制：
+
+```bash
+mkdir -p ~/.codex/skills
+cp -R /path/to/api-image ~/.codex/skills/api-image
+```
+
+Windows：
 
 把仓库放到 Codex 的 skills 目录：
 
@@ -36,18 +52,27 @@ git clone <repo-url> "$env:CODEX_HOME\skills\api-image"
 
 ## 配置
 
-默认情况下，这个 Skill 会读取你 Codex 根目录里的配置：
+这个 Skill 不读取 Codex 根目录里的 `auth.json` 或 `config.toml`。
 
-- `auth.json`
-- `config.toml`
+安装后只改这个文件：
 
-它需要能从里面找到：
+```bash
+~/.codex/skills/api-image/.env
+```
 
+内容写成这样：
+
+```env
+API_IMAGE_BASE_URL=https://你的第三方地址/v1
+API_IMAGE_API_KEY=你的第三方key
+```
+
+需要填两个值：
+
+- `base_url`
 - API Key
-- 当前 Provider
-- Provider 的 `base_url`
 
-这个仓库不会、也不应该保存你的 API Key。
+`.env` 已在 `.gitignore` 里，不会上传到 GitHub。不要把真实 key 写进 `README.md` 或 `SKILL.md`。
 
 ## 怎么用
 
@@ -69,17 +94,13 @@ git clone <repo-url> "$env:CODEX_HOME\skills\api-image"
 先查一下花江峡谷大桥的结构和地形参考，再生成一张高空俯视图，尽量保持真实桥型和峡谷环境。
 ```
 
-## 临时换接口
-
-默认会用你 Codex 根目录里的 Provider 配置。
-
-如果只想这一次换 URL 或 key，可以直接告诉 Codex：
+如果只想临时换一次接口，也可以告诉 Codex：
 
 ```text
-这次生图临时用 https://example.com/v1 这个 base_url，API key 从 API_IMAGE_API_KEY 环境变量读。
+这次生图临时用 https://example.com/v1 这个 base_url，API key 用我提供的临时 key。
 ```
 
-更推荐让 key 放在环境变量里，不要在聊天里直接粘贴。临时切换只影响本次调用，不会写回你的 `auth.json` 或 `config.toml`，除非你明确要求 Codex 修改配置。
+日常用法只改 `.env`。临时 key 不会写回 `.env`。
 
 ## 关于 gpt-image-2
 

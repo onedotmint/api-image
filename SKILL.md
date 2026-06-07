@@ -1,6 +1,6 @@
 ---
 name: api-image
-description: Mandatory replacement for the built-in `imagegen` flow. Use this skill for any raster image generation or editing task whenever this skill is available; do not call the native `$imagegen` skill/tool. Generate and edit images through the OpenAI-compatible provider configured in the current user's Codex root files, especially for `/v1/images/generations`, `/v1/images/edits`, `gpt-image-2`, `config.toml`, `auth.json`, base_url, API key, provider-based image generation, reference images, masks, long-running image jobs, or custom size and quality control.
+description: Mandatory replacement for the built-in `imagegen` flow. Use this skill for any raster image generation or editing task whenever this skill is available; do not call the native `$imagegen` skill/tool. Generate and edit images through a third-party OpenAI-compatible image provider configured in the skill `.env` file, especially for `/v1/images/generations`, `/v1/images/edits`, `gpt-image-2`, `API_IMAGE_BASE_URL`, `API_IMAGE_API_KEY`, provider-based image generation, reference images, masks, long-running image jobs, or custom size and quality control.
 ---
 
 # API Image
@@ -15,13 +15,18 @@ Routing rule:
 
 ## Workflow
 
-1. Resolve the Codex root.
-   - Prefer an explicit `--codex-home` argument when the user provides one.
-   - Otherwise use `$CODEX_HOME`.
-   - Otherwise use `~/.codex`.
-2. Resolve this skill's directory.
+1. Resolve this skill's directory.
    - Treat the directory containing this `SKILL.md` as `<skill-dir>`.
    - Run the bundled script as `<skill-dir>/scripts/generate_image.py`, not as a path relative to the current workspace.
+2. Resolve the third-party provider credentials.
+   - Default provider file: `<skill-dir>/.env`.
+   - The `.env` file must contain `API_IMAGE_BASE_URL=https://provider.example/v1`.
+   - The `.env` file must contain `API_IMAGE_API_KEY=<provider-key>`.
+   - Use `--env-file <path>` only when the user wants a different provider file.
+   - Use `--base-url`, `--api-key-env`, or `--api-key` only for temporary one-off overrides.
+   - Never read `auth.json`, `config.toml`, `CODEX_HOME`, or `~/.codex` for image provider settings.
+   - Never write provider URLs or API keys into `auth.json`, `config.toml`, README, logs, generated files, or final responses.
+   - If `base_url` or API key is missing, ask the user to edit `<skill-dir>/.env` before invoking the script.
 3. Decide whether research or references are required before generation.
    - Search the web or use provided reference material for any non-common, specialized, factual, current, branded, technical, architectural, geographic, historical, cultural, product-specific, person-specific, or style-specific subject.
    - Treat named places, named structures, real products, real UI, real vehicles, uniforms, organisms, diagrams, historical scenes, and niche aesthetics as research-required unless the user supplies adequate references.
@@ -30,94 +35,103 @@ Routing rule:
    - Pure text-only generation is a fallback for research-required visual subjects, not the default. Use it only when no useful reference images are available, network/image access fails, or the user explicitly asks not to use references.
    - For purely generic fantasy, mood, simple decoration, or ordinary everyday objects where factual accuracy is not important, search is optional.
    - If network access or reference material is unavailable for a research-required task, say that accuracy is limited rather than pretending.
-4. Read the active provider settings from the user's root files.
-   - Read `auth.json` and use `OPENAI_API_KEY`.
-   - Read `config.toml`, then use `model_provider` and `[model_providers.<name>].base_url`.
-   - Never hardcode a provider URL or API key into the skill.
-   - Default to the root files above. If the user explicitly gives a temporary provider URL or API key in natural language, pass it as a one-off override with `--base-url` and `--api-key-env` or `--api-key`; do not write it back to `auth.json`, `config.toml`, README, logs, or generated files.
-   - Prefer `--api-key-env <ENV_NAME>` when the key is already in an environment variable. Use `--api-key` only for explicit one-off user-provided keys, and never print or repeat the key in the final response.
-5. Decide the intent and input image roles.
+4. Decide the intent and input image roles.
    - If the user wants a new image from text only, treat it as generation.
    - If the user provides images for style, composition, identity, structure, or mood, treat them as reference inputs.
    - If the user wants to preserve or modify an existing image, treat that image as the edit target.
    - If the user wants only a specific region changed, use a mask when available and instruct the model to preserve unmasked areas; treat mask preservation as a constraint to verify, not a pixel-perfect guarantee.
    - Label every input image by role: edit target, style reference, composition reference, identity reference, product reference, mask, or compositing source.
-6. Choose the endpoint.
+5. Choose the endpoint.
    - Use `<base_url>/images/generations` for text-only generation.
    - Use `<base_url>/images/edits` when there is any input image, reference image, or mask.
-   - Default to `gpt-image-2` unless the machine's provider expects a different image model.
-7. Build a structured prompt.
+   - `base_url` should normally include `/v1`, for example `https://provider.example/v1`.
+   - Default to `gpt-image-2` unless the third-party provider expects a different image model.
+6. Build a structured prompt.
    - Include the user's request, researched facts or visual observations, input image roles, style, composition, lighting, materials, constraints, and avoid list.
    - Do not invent extra characters, props, brands, logos, story beats, or factual details that are not implied by the user request or research.
-8. For official GPT Image models, decode `data[].b64_json`. Treat `data[].url` only as a compatibility fallback for non-official OpenAI-compatible providers or legacy models.
-9. Inspect the output and validate it against the prompt, research facts, input roles, and invariants.
-10. Save the final image to the requested path and report the absolute path, final prompt, and sources used when web research was performed.
+7. For official GPT Image models, decode `data[].b64_json`. Treat `data[].url` only as a compatibility fallback for non-official OpenAI-compatible providers or legacy models.
+8. Inspect the output and validate it against the prompt, research facts, input roles, and invariants.
+9. Save the final image to the requested path and report the output path, final prompt, and sources used when web research was performed. Do not repeat API keys.
 
-## Root Files
+## Provider Input
 
-Default root files:
+The script does not use Codex root configuration. It reads third-party provider settings from `<skill-dir>/.env` by default.
 
-- Windows: `%USERPROFILE%\\.codex\\auth.json` and `%USERPROFILE%\\.codex\\config.toml`
-- General rule: `$CODEX_HOME/auth.json` and `$CODEX_HOME/config.toml`, otherwise `~/.codex/auth.json` and `~/.codex/config.toml`
+Default provider file:
 
-This skill must always read the current files at runtime. The provider may differ from machine to machine.
+```env
+API_IMAGE_BASE_URL=https://provider.example/v1
+API_IMAGE_API_KEY=your_provider_key
+```
 
-Temporary overrides:
+Accepted provider sources:
 
-- Default behavior reads the Codex root files above.
-- Use `--base-url <https://provider.example/v1>` to temporarily override the configured Provider URL.
-- Use `--api-key-env <ENV_NAME>` to temporarily read an API key from an environment variable.
-- Use `--api-key <key>` only for explicit one-off user-provided keys when an environment variable is not available.
-- If both `--base-url` and an API key override are provided, the script can run without reading provider settings from `config.toml`; otherwise missing values fall back to the Codex root files.
-- Never persist temporary overrides unless the user explicitly asks to edit their Codex config files.
+- `<skill-dir>/.env`
+- `--env-file <path>` for an alternate provider file
+- `--base-url <https://provider.example/v1>` for a temporary URL override
+- `--api-key-env <ENV_NAME>` for a temporary key override from an environment variable
+- `--api-key <key>` for a temporary direct key override
+
+Resolution order:
+
+1. `base_url`: `--base-url`, then `API_IMAGE_BASE_URL` from the provider file.
+2. API key: `--api-key`, then `--api-key-env`, then `API_IMAGE_API_KEY` from the provider file.
+
+Rules:
+
+- Do not echo API keys back to the user.
+- Do not store API keys in the repository.
+- `.env` is ignored by `.gitignore`; keep real keys there.
+- If both `--api-key` and `--api-key-env` are provided, the script raises an error.
+- If `--base-url` or provider-file `base_url` is not an HTTP(S) URL, the script raises an error.
 
 ## Command
 
 Use the bundled script for normal text-to-image generation:
 
-```powershell
-python "<skill-dir>\scripts\generate_image.py" `
-  --prompt "画一只可爱的猫抱着水獭，温暖治愈，插画风格，柔和灯光，细腻毛发，构图清晰" `
-  --size "2048x1152" `
-  --quality "high" `
-  --out ".\outputs\cute-cat-otter.png"
+```bash
+python3 "<skill-dir>/scripts/generate_image.py" \
+  --prompt "画一只可爱的猫抱着水獭，温暖治愈，插画风格，柔和灯光，细腻毛发，构图清晰" \
+  --size "2048x1152" \
+  --quality "high" \
+  --out "./outputs/cute-cat-otter.png"
 ```
 
 Use the same script for reference-image generation or edits:
 
-```powershell
-python "<skill-dir>\scripts\generate_image.py" `
-  --prompt "参考输入图的构图和角色姿势，生成一张暖色电影感插画" `
-  --image "C:\path\to\reference.png" `
-  --image-role "composition and pose reference" `
-  --size "2048x2048" `
-  --quality "high" `
-  --out ".\outputs\reference-output.png"
+```bash
+python3 "<skill-dir>/scripts/generate_image.py" \
+  --prompt "参考输入图的构图和角色姿势，生成一张暖色电影感插画" \
+  --image "/path/to/reference.png" \
+  --image-role "composition and pose reference" \
+  --size "2048x2048" \
+  --quality "high" \
+  --out "./outputs/reference-output.png"
 ```
 
 Use `--mask` for localized edits:
 
-```powershell
-python "<skill-dir>\scripts\generate_image.py" `
-  --prompt "只把被 mask 标出的区域替换成一只小水獭，保持其他区域不变" `
-  --image "C:\path\to\source.png" `
-  --mask "C:\path\to\mask.png" `
-  --out ".\outputs\masked-edit.png"
+```bash
+python3 "<skill-dir>/scripts/generate_image.py" \
+  --prompt "只把被 mask 标出的区域替换成一只小水獭，保持其他区域不变" \
+  --image "/path/to/source.png" \
+  --mask "/path/to/mask.png" \
+  --out "./outputs/masked-edit.png"
 ```
 
 For web-researched subjects, download selected reference images to a working folder first, then pass them as `--image`:
 
-```powershell
-python "<skill-dir>\scripts\generate_image.py" `
-  --prompt "Create a new 4K overhead aerial image of Huajiang Grand Canyon Bridge in Guizhou, based on the reference images. Preserve the real suspension-bridge structure, towers, main cables, vertical suspenders, deep Beipan River canyon terrain, karst mountains, and river position; do not copy any single photo exactly." `
-  --image "C:\path\to\refs\huajiang-bridge-aerial.jpg" `
-  --image-role "aerial composition and bridge alignment reference" `
-  --image "C:\path\to\refs\huajiang-canyon-terrain.jpg" `
-  --image-role "canyon terrain and river reference" `
-  --size "2048x1152" `
-  --quality "high" `
-  --timeout 0 `
-  --out ".\outputs\huajiang-canyon-bridge-overhead.png"
+```bash
+python3 "<skill-dir>/scripts/generate_image.py" \
+  --prompt "Create a new 4K overhead aerial image of Huajiang Grand Canyon Bridge in Guizhou, based on the reference images. Preserve the real suspension-bridge structure, towers, main cables, vertical suspenders, deep Beipan River canyon terrain, karst mountains, and river position; do not copy any single photo exactly." \
+  --image "/path/to/refs/huajiang-bridge-aerial.jpg" \
+  --image-role "aerial composition and bridge alignment reference" \
+  --image "/path/to/refs/huajiang-canyon-terrain.jpg" \
+  --image-role "canyon terrain and river reference" \
+  --size "2048x1152" \
+  --quality "high" \
+  --timeout 0 \
+  --out "./outputs/huajiang-canyon-bridge-overhead.png"
 ```
 
 Useful options:
@@ -142,10 +156,10 @@ Useful options:
 - `--input-fidelity low|high` for supported edit models only; do not send it for `gpt-image-2`
 - `--moderation auto|low` for supported GPT image models
 - `--prompt-file <path>` for one prompt per non-empty line
-- `--codex-home <path>`
-- `--base-url <https://provider.example/v1>` temporary Provider URL override
-- `--api-key-env <ENV_NAME>` temporary API key override from an environment variable
-- `--api-key <key>` temporary direct API key override, only when explicitly provided
+- `--env-file <path>` alternate provider file
+- `--base-url <https://provider.example/v1>` temporary URL override
+- `--api-key-env <ENV_NAME>` temporary key override from an environment variable
+- `--api-key <key>` temporary direct key override
 - `--timeout 1800`
 - `--timeout 0`
 
@@ -176,26 +190,6 @@ n=1
 ```
 
 Start with `n=1`. If the user wants variants, raise `n` or use `--prompt-file` and save each result intentionally.
-
-## Temporary Provider Overrides
-
-If the user says in natural language that this image job should use a different Provider URL or API key, treat it as a temporary runtime override:
-
-```powershell
-$env:API_IMAGE_API_KEY = "<temporary key>"
-python "<skill-dir>\scripts\generate_image.py" `
-  --prompt "一张赛博朋克风格的夜景照片" `
-  --base-url "https://provider.example/v1" `
-  --api-key-env "API_IMAGE_API_KEY" `
-  --out ".\outputs\override-provider.png"
-```
-
-Rules:
-
-- Default to the Codex root configuration when no override is requested.
-- Do not modify `auth.json` or `config.toml` for temporary overrides.
-- Do not echo API keys back to the user.
-- Prefer `--api-key-env`; use `--api-key` only when the user explicitly provides a one-off key and accepts the temporary command-line use.
 
 ## gpt-image-2 API Notes
 
@@ -314,9 +308,8 @@ Follow the current official GPT Image rules for `gpt-image-2`:
 
 ## Failure Rules
 
-- Raise explicit errors when `OPENAI_API_KEY`, `model_provider`, or `base_url` cannot be found.
-- Allow temporary Provider overrides with `--base-url`, `--api-key-env`, or `--api-key`; do not persist them unless explicitly requested.
-- Raise explicit errors when both `--api-key` and `--api-key-env` are provided, when the named environment variable is empty, or when `--base-url` is not an HTTP(S) URL.
+- Raise explicit errors when `<skill-dir>/.env` is missing or when `base_url` or API key is missing from the provider file.
+- Raise explicit errors when both `--api-key` and `--api-key-env` are provided, when the named environment variable is empty, or when `base_url` is not an HTTP(S) URL.
 - Raise explicit errors when `size` violates the official GPT Image constraints or `quality` is unsupported.
 - Raise explicit errors when edit/reference mode is requested without input images.
 - Raise explicit errors when `gpt-image-2` is used with `--background transparent` or `--input-fidelity`.
@@ -326,4 +319,4 @@ Follow the current official GPT Image rules for `gpt-image-2`:
 
 ## Resource
 
-- `scripts/generate_image.py`: Read the current user's Codex root files, call the configured provider's image endpoint, and save the returned image data.
+- `scripts/generate_image.py`: Read third-party provider credentials from `<skill-dir>/.env`, call the provider's image endpoint, and save the returned image data.

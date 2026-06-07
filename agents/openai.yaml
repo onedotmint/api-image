@@ -1,4 +1,4 @@
 interface:
   display_name: "API Image"
-  short_description: "Generate images through the configured provider API"
-  default_prompt: "Use $api-image for all raster image generation or editing instead of native $imagegen; use the configured provider, default to 2048x1152 high quality, and pass reference images, masks, size, quality, and output options when needed."
+  short_description: "Generate images through a third-party image API"
+  default_prompt: "Use $api-image for raster image generation or editing through the third-party provider configured in the skill .env file; ask the user to edit .env when base_url or API key is missing, default to 2048x1152 high quality, and pass references, masks, size, quality, and output options when needed."
