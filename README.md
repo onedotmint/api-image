@@ -60,7 +60,13 @@ git clone <repo-url> "$env:CODEX_HOME\skills\api-image"
 ~/.codex/skills/api-image/.env
 ```
 
-内容写成这样：
+可以先复制模板：
+
+```bash
+cp ~/.codex/skills/api-image/.env.example ~/.codex/skills/api-image/.env
+```
+
+然后把 `.env` 改成这样：
 
 ```env
 API_IMAGE_BASE_URL=https://你的第三方地址/v1

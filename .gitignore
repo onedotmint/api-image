@@ -8,6 +8,7 @@ env/
 
 .env
 .env.*
+!.env.example
 auth.json
 config.toml
 
@@ -20,4 +21,3 @@ outputs/
 
 .DS_Store
 Thumbs.db
-
